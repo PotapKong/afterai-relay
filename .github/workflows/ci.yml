@@ -15,7 +15,7 @@ jobs:
       - name: Python compile
         run: python3 -m py_compile afterai_relay/*.py
       - name: Auth-session tests
-        run: python3 tests/test_auth_session.py
+        run: PYTHONPATH=. python3 tests/test_auth_session.py
       - name: Task workspace tests
         run: python3 tests/test_task_workspace.py
       - name: Task verify tests
