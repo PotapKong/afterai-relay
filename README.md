@@ -125,6 +125,7 @@ scripts/afterai-relay task network <run_id> search --url api --method GET
 scripts/afterai-relay task network <run_id> export
 scripts/afterai-relay task init-script <run_id> add webdriver --file init/webdriver.js
 scripts/afterai-relay task init-script <run_id> list
+scripts/afterai-relay task upload <run_id> validate --file /absolute/path/to/file
 scripts/afterai-relay cleanup
 scripts/afterai-relay cleanup --execute
 scripts/afterai-relay stealth doctor --preset cf-sensitive
@@ -173,7 +174,7 @@ rule:   do not dump cookies, auth headers, browser profiles, or raw tokens
 
 Network observations are metadata-first: token-like query values, auth/cookie headers, and request/response bodies are redacted or omitted. `task network add/search/export` keeps this evidence private-local and never prints raw captured content by default. Init scripts are stored per task and reported only by name, byte size, and SHA-256; use them only for explicitly approved task runs, never to mutate a long-lived authenticated rail.
 
-`doctor webwright` reports the exact CDP binding, browser/root/container hints, and redacted proxy diagnostics. `cleanup` is dry-run by default and blocks outside-base and symlink targets. Upload helpers require `AFTERAI_RELAY_UPLOAD_ALLOWED_DIRS` and reject relative, missing, directory, symlink, or outside-root paths. `stealth doctor` is diagnostic-only: it checks consistency and classifies samples, but makes no CAPTCHA or Cloudflare-bypass claim.
+`doctor webwright` reports the exact CDP binding, browser/root/container hints, and redacted proxy diagnostics. The Chromium launcher accepts only unauthenticated proxy URLs; credentialed URLs fail closed until a secure browser-auth implementation exists. `cleanup` is dry-run by default and blocks outside-base and symlink targets. `task upload <run> validate --file …` exposes the upload allowlist without performing an upload: it requires `AFTERAI_RELAY_UPLOAD_ALLOWED_DIRS` and rejects relative, missing, directory, symlink, or outside-root paths. `stealth doctor` is diagnostic-only: it checks consistency and classifies samples, but makes no CAPTCHA or Cloudflare-bypass claim.
 
 Hardening rules: run IDs cannot contain path components or escape `runs_dir`; browser cookie/profile dumps (`Cookies`, `Local State`, SQLite DBs, HARs, symlinks) fail hygiene; agent command failures return structured gates such as `agent_command_not_found` or `agent_command_timeout`.
 

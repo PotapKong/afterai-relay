@@ -164,7 +164,11 @@ proxy_server() {
 import os, sys
 from afterai_relay.proxy import ProxyConfigError, parse_proxy_config
 try:
-    print(parse_proxy_config(os.environ.get('AFTERAI_RELAY_PROXY', '')).server)
+    config = parse_proxy_config(os.environ.get('AFTERAI_RELAY_PROXY', ''))
+    if config.username is not None:
+        print("authenticated proxies are not supported by the Chromium launcher", file=sys.stderr)
+        sys.exit(2)
+    print(config.server)
 except ProxyConfigError as exc:
     print(f"proxy config invalid: {exc}", file=sys.stderr)
     sys.exit(2)
@@ -257,6 +261,11 @@ resolve_backend_order() {
 }
 
 cmd_launch() {
+  # Validate before probing/starting a backend so unsupported credentialed proxies
+  # fail closed even on hosts without a browser binary.
+  if [ -n "$PROXY" ]; then
+    proxy_server >/dev/null
+  fi
   if check_cdp; then
     write_state "existing" "up" "already-running"
     cmd_status

@@ -114,19 +114,33 @@ class StealthBrowserMcpAdoptionTests(unittest.TestCase):
             final_text = (run_dir / "scripts" / "final.py").read_text(encoding="utf-8")
             self.assertIn("apply_init_scripts", final_text)
 
-    def test_proxy_doctor_redacts_credentials_and_merge_keeps_single_arg(self) -> None:
+    def test_proxy_diagnostics_redact_every_secret_component_and_reject_unsupported_auth(self) -> None:
         parsed = parse_proxy_config("http://user:pass@example.com:8080")
         self.assertEqual(parsed.server, "http://example.com:8080")
         args = merge_proxy_server_arg(["--foo", "--proxy-server=http://old:1"], parsed.server)
         self.assertEqual(args.count("--proxy-server=http://example.com:8080"), 1)
-        self.assertNotIn("pass", redact_launch_arg("--proxy-server=http://user:pass@example.com:8080"))
+        redacted = redact_launch_arg("--proxy-server=http://user:pass@example.com:8080/path?access_token=TOP_SECRET#fragment")
+        self.assertEqual(redacted, "--proxy-server=http://example.com:8080")
         with tempfile.TemporaryDirectory() as tmp:
             base = pathlib.Path(tmp)
-            checked = self.run_relay("doctor", "webwright", base_dir=base, json_mode=True, extra_env={"AFTERAI_RELAY_PROXY": "http://user:pass@example.com:8080"})
-            self.assertEqual(checked.returncode, 0, checked.stderr + checked.stdout)
-            self.assertNotIn("pass", checked.stdout)
-            self.assertIn("proxy", json.loads(checked.stdout)["checks"])
+            proxy_url = "http://user:pass@example.com:8080/?access_token=TOP_SECRET"
+            checked = self.run_relay("doctor", "webwright", base_dir=base, json_mode=True, extra_env={"AFTERAI_RELAY_PROXY": proxy_url})
+            self.assertNotEqual(checked.returncode, 0)
+            self.assertNotIn("user", checked.stdout + checked.stderr)
+            self.assertNotIn("pass", checked.stdout + checked.stderr)
+            self.assertNotIn("TOP_SECRET", checked.stdout + checked.stderr)
+            payload = json.loads(checked.stdout)
+            self.assertEqual(payload["checks"]["proxy"]["failed_gate"], "proxy_auth_unsupported")
 
+    def test_shell_launch_rejects_authenticated_proxy_without_echoing_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            proxy_url = "http://user:pass@example.com:8080/?access_token=TOP_SECRET"
+            launched = self.run_relay("launch", "--backend", "chromium", base_dir=base, extra_env={"AFTERAI_RELAY_PROXY": proxy_url})
+            self.assertNotEqual(launched.returncode, 0)
+            self.assertNotIn("user", launched.stdout + launched.stderr)
+            self.assertNotIn("pass", launched.stdout + launched.stderr)
+            self.assertNotIn("TOP_SECRET", launched.stdout + launched.stderr)
     def test_proxy_invalid_errors_and_cdp_binding_is_exact_loopback_only(self) -> None:
         self.assertTrue(cdp_binding("http://localhost:18800")["ok"])
         self.assertTrue(cdp_binding("http://127.0.0.1:18800")["ok"])
@@ -206,6 +220,27 @@ class StealthBrowserMcpAdoptionTests(unittest.TestCase):
             link.symlink_to(good)
             with self.assertRaises(ValueError):
                 validate_upload_paths([str(link)], allowed_roots=[allowed])
+
+    def test_task_upload_validate_exposes_allowlist_to_operators(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            allowed = base / "allowed"
+            outside = base / "outside"
+            allowed.mkdir(); outside.mkdir()
+            good = allowed / "file.txt"
+            good.write_text("ok", encoding="utf-8")
+            bad = outside / "file.txt"
+            bad.write_text("no", encoding="utf-8")
+            run_id, _ = self.create_run(base)
+            env = {"AFTERAI_RELAY_UPLOAD_ALLOWED_DIRS": str(allowed)}
+            checked = self.run_relay("task", "upload", run_id, "validate", "--file", str(good), base_dir=base, json_mode=True, extra_env=env)
+            self.assertEqual(checked.returncode, 0, checked.stderr + checked.stdout)
+            payload = json.loads(checked.stdout)
+            self.assertEqual(payload["status"], "validated")
+            self.assertEqual(payload["files"], [str(good.resolve())])
+            rejected = self.run_relay("task", "upload", run_id, "validate", "--file", str(bad), base_dir=base, json_mode=True, extra_env=env)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("upload_path_outside_allowed_roots", rejected.stdout)
 
     def test_stealth_doctor_reports_diagnostics_not_guaranteed_bypass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

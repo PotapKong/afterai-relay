@@ -12,6 +12,7 @@ import string
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -174,6 +175,47 @@ def _wait_port(host: str, port: int, timeout: float = 10) -> None:
     raise RuntimeError(f"service did not open {host}:{port}")
 
 
+def _assert_loopback_listener(port: int) -> None:
+    """Require the actual TCP listener to be loopback-only, not just configured so."""
+    ss = _require_binary("ss")
+    result = subprocess.run([ss, "-ltnH"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, text=True)
+    if result.returncode != 0:
+        raise RuntimeError("unable to inspect auth listeners")
+    listeners: list[str] = []
+    suffix = f":{port}"
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        local = fields[3]
+        if local.endswith(suffix):
+            listeners.append(local)
+    if not listeners:
+        raise RuntimeError(f"auth listener not found on port {port}")
+    for local in listeners:
+        host = local[: -len(suffix)].strip("[]")
+        if host not in {"127.0.0.1", "::1"}:
+            raise RuntimeError(f"auth listener is not loopback-only: {local}")
+
+
+def _wait_public_http(base_url: str, timeout: float = 30) -> None:
+    """Confirm that a Quick Tunnel URL is externally reachable before handoff."""
+    deadline = time.time() + timeout
+    url = f"{base_url.rstrip('/')}/vnc.html?autoconnect=true&resize=scale"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    last_error = "no response"
+    while time.time() < deadline:
+        try:
+            with opener.open(url, timeout=4) as response:
+                if 200 <= int(response.status) < 400:
+                    return
+                last_error = f"http {response.status}"
+        except OSError as exc:
+            last_error = type(exc).__name__
+        time.sleep(0.5)
+    raise RuntimeError(f"quick tunnel did not become publicly reachable: {last_error}")
+
+
 def _spawn(command: list[str], log_path: Path) -> subprocess.Popen[bytes]:
     log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     log = open(log_path, "ab", buffering=0)
@@ -260,6 +302,7 @@ def start_session(config: AuthConfig, *, tunnel: str = "none") -> dict[str, Any]
             "-forever", "-shared", "-noxdamage", "-quiet",
         ], config.log_dir / "x11vnc.log")
         _wait_port(config.vnc_host, config.vnc_port)
+        _assert_loopback_listener(config.vnc_port)
 
         processes["novnc"] = _spawn([
             websockify,
@@ -268,6 +311,7 @@ def start_session(config: AuthConfig, *, tunnel: str = "none") -> dict[str, Any]
             f"{config.vnc_host}:{config.vnc_port}",
         ], config.log_dir / "websockify.log")
         _wait_port(config.novnc_host, config.novnc_port)
+        _assert_loopback_listener(config.novnc_port)
 
         public_url = None
         if tunnel == "cloudflared":
@@ -278,6 +322,7 @@ def start_session(config: AuthConfig, *, tunnel: str = "none") -> dict[str, Any]
                 f"http://{config.novnc_host}:{config.novnc_port}",
             ], tunnel_log)
             public_url = _wait_tunnel_url(tunnel_log)
+            _wait_public_http(public_url)
 
         now = int(time.time())
         state = {

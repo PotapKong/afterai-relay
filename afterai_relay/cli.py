@@ -16,6 +16,7 @@ from .recipes import list_recipes, load_recipe, pack_run, parse_params, prepare_
 from .relay_adapter import format_evidence_lines, relay_response
 from .reports import artifacts_report, evidence_report
 from .stealth import load_sample, stealth_doctor
+from .uploads import validate_upload_paths
 from .verifier import verify_run
 from .workspace import init_run, list_runs, load_manifest, resolve_run, write_manifest
 
@@ -97,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     init_add.add_argument("--file", required=True)
     init_script_sub.add_parser("list")
 
+    upload = task_sub.add_parser("upload")
+    upload.add_argument("run")
+    upload_sub = upload.add_subparsers(dest="upload_command", required=True)
+    upload_validate = upload_sub.add_parser("validate")
+    upload_validate.add_argument("--file", action="append", required=True)
+
     doctor = sub.add_parser("doctor")
     doctor.add_argument("topic", nargs="?", default="webwright", choices=["webwright", "playwright"])
 
@@ -167,6 +174,20 @@ def cmd_task_init_script(args: argparse.Namespace, config) -> int:
         emit({"status": "ok", "run_id": run_dir.name, "scripts": list_init_scripts(run_dir)}, json_mode=args.json_mode)
         return 0
     raise SystemExit(f"unknown init-script command: {args.init_script_command}")
+
+
+def cmd_task_upload(args: argparse.Namespace, config) -> int:
+    run_dir = resolve_run(config, args.run)
+    if args.upload_command == "validate":
+        files = validate_upload_paths(args.file)
+        emit({
+            "status": "validated",
+            "run_id": run_dir.name,
+            "files": files,
+            "policy": "allowlist-only/no-upload-performed",
+        }, json_mode=args.json_mode)
+        return 0
+    raise SystemExit(f"unknown upload command: {args.upload_command}")
 
 
 def cmd_task(args: argparse.Namespace) -> int:
@@ -301,6 +322,8 @@ def cmd_task(args: argparse.Namespace) -> int:
         return cmd_task_network(args, config)
     if args.task_command == "init-script":
         return cmd_task_init_script(args, config)
+    if args.task_command == "upload":
+        return cmd_task_upload(args, config)
     raise SystemExit(f"unknown task command: {args.task_command}")
 
 

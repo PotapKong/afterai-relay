@@ -147,11 +147,12 @@ def doctor_webwright(config: RelayConfig) -> dict[str, Any]:
         try:
             parsed_proxy = parse_proxy_config(config.proxy)
             proxy_check = {
-                "ok": True,
+                "ok": parsed_proxy.username is None,
                 "configured": True,
                 "server": parsed_proxy.server,
                 "redacted": redact_proxy_url(config.proxy),
                 "auth": parsed_proxy.username is not None,
+                "failed_gate": "proxy_auth_unsupported" if parsed_proxy.username is not None else None,
             }
         except ProxyConfigError as exc:
             proxy_check = {"ok": False, "configured": True, "failed_gate": str(exc), "redacted": "[REDACTED]"}

@@ -77,7 +77,9 @@ def redact_proxy_url(value: str | None) -> str:
     netloc = _format_host(host)
     if parsed.port is not None:
         netloc = f"{netloc}:{parsed.port}"
-    redacted = urlunsplit((parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment))
+    # A proxy URL's path, query, and fragment are never needed for launch
+    # diagnostics and may carry bearer tokens or opaque vendor credentials.
+    redacted = urlunsplit((parsed.scheme or "http", netloc, "", "", ""))
     if "://" not in raw and redacted.startswith("http://"):
         return redacted[len("http://"):]
     return redacted

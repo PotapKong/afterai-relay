@@ -145,6 +145,7 @@ scripts/afterai-relay task network <run_id> search --url api --method GET
 scripts/afterai-relay task network <run_id> export
 scripts/afterai-relay task init-script <run_id> add webdriver --file init/webdriver.js
 scripts/afterai-relay task init-script <run_id> list
+scripts/afterai-relay task upload <run_id> validate --file /absolute/path/to/file
 scripts/afterai-relay cleanup
 scripts/afterai-relay cleanup --execute
 scripts/afterai-relay stealth doctor --preset cf-sensitive
@@ -160,9 +161,9 @@ Production adapter rules:
 - `artifacts` returns metadata only: paths, types, sizes, sensitivity. It must not print log/screenshot/result contents.
 - `task network` stores redacted request metadata under `network/`; sensitive headers/query tokens and bodies are not printed by default.
 - `task init-script` stores pre-document JavaScript under `init_scripts/` and reports only name/size/SHA-256. Use it only for explicitly approved task runs; do not mutate persistent authenticated rails.
-- `doctor webwright` includes browser environment, exact CDP binding, and redacted `AFTERAI_RELAY_PROXY` diagnostics.
+- `doctor webwright` includes browser environment, exact CDP binding, and redacted `AFTERAI_RELAY_PROXY` diagnostics. Credentialed proxy URLs fail closed because the Chromium launcher has no secure proxy-auth implementation.
 - `cleanup` is dry-run by default and may only remove relay-managed paths inside `AFTERAI_RELAY_BASE_DIR`.
-- Upload helpers require `AFTERAI_RELAY_UPLOAD_ALLOWED_DIRS` and reject relative/outside/symlink paths.
+- `task upload <run> validate --file …` exposes the allowlist without performing an upload. It requires `AFTERAI_RELAY_UPLOAD_ALLOWED_DIRS` and rejects relative/outside/symlink paths.
 - `stealth doctor` is diagnostic-only: presets report fingerprint/challenge state, not guaranteed Cloudflare bypass.
 - Authenticated artifacts stay `private-local/no-auto-send` unless a separate policy-cleared export is built.
 - `task context` is the Hermes-native workflow primitive: Hermes is the agent, `/relay` is the browser tool/substrate. It returns the editable `scripts/final.py`, verify/show/artifact commands, current verification state, evidence summary, and metadata-only artifact paths.

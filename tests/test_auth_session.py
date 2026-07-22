@@ -9,6 +9,8 @@ from unittest import mock
 
 from afterai_relay.auth import (
     AuthConfig,
+    _assert_loopback_listener,
+    _wait_public_http,
     parse_cloudflared_url,
     public_status,
     stop_session,
@@ -65,6 +67,23 @@ class AuthSessionTests(unittest.TestCase):
             self.assertFalse(password_file.exists())
             self.assertFalse(state_file.exists())
             self.assertEqual((profile / "keep.txt").read_text(), "keep")
+
+    def test_listener_check_requires_actual_loopback_bind(self) -> None:
+        good = mock.Mock(returncode=0, stdout="LISTEN 0 32 127.0.0.1:5901 0.0.0.0:*\n", stderr="")
+        with mock.patch("afterai_relay.auth._require_binary", return_value="/usr/bin/ss"), mock.patch("afterai_relay.auth.subprocess.run", return_value=good):
+            _assert_loopback_listener(5901)
+        wildcard = mock.Mock(returncode=0, stdout="LISTEN 0 32 0.0.0.0:5901 0.0.0.0:*\n", stderr="")
+        with mock.patch("afterai_relay.auth._require_binary", return_value="/usr/bin/ss"), mock.patch("afterai_relay.auth.subprocess.run", return_value=wildcard), self.assertRaisesRegex(RuntimeError, "not loopback-only"):
+            _assert_loopback_listener(5901)
+
+    def test_quick_tunnel_url_must_answer_http_before_handoff(self) -> None:
+        response = mock.MagicMock(status=200)
+        response.__enter__.return_value = response
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+        with mock.patch("afterai_relay.auth.urllib.request.build_opener", return_value=opener):
+            _wait_public_http("https://quiet-river.trycloudflare.com", timeout=1)
+        opener.open.assert_called_once()
 
     def test_config_defaults_to_loopback(self) -> None:
         with tempfile.TemporaryDirectory() as td:
