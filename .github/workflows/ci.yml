@@ -1,0 +1,57 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Public hygiene
+        run: python3 tests/test_public_hygiene.py
+      - name: Python compile
+        run: python3 -m py_compile afterai_relay/*.py
+      - name: Auth-session tests
+        run: python3 tests/test_auth_session.py
+      - name: Task workspace tests
+        run: python3 tests/test_task_workspace.py
+      - name: Task verify tests
+        run: python3 tests/test_task_verify.py
+      - name: Task run/pack tests
+        run: python3 tests/test_task_run_pack.py
+      - name: Recipe command tests
+        run: python3 tests/test_recipe_commands.py
+      - name: Agent loop tests
+        run: python3 tests/test_agent_loop.py
+      - name: Hermes workflow context tests
+        run: python3 tests/test_hermes_workflow_context.py
+      - name: Bundled agent example tests
+        run: python3 tests/test_bundled_agent_example.py
+      - name: Production adapter tests
+        run: python3 tests/test_production_adapter.py
+      - name: Relay adapter tests
+        run: python3 tests/test_relay_adapter.py
+      - name: Review hardening tests
+        run: python3 tests/test_review_hardening.py
+      - name: Stealth, network, proxy, cleanup, and upload tests
+        run: python3 tests/test_stealth_browser_mcp_adoption.py
+      - name: Shell syntax
+        run: python3 tests/test_shell_syntax.py
+      - name: Skill guard
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('SKILL.md').read_text()
+          assert p.startswith('---\n')
+          front = p.split('---', 2)[1]
+          fields = {}
+          for line in front.splitlines():
+              if ':' in line and not line.startswith(' '):
+                  k, v = line.split(':', 1)
+                  fields[k.strip()] = v.strip().strip('"')
+          assert fields.get('name') == 'afterai-relay'
+          assert fields.get('description') and len(fields['description']) <= 1024
+          PY
